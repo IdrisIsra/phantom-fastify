@@ -1,36 +1,52 @@
-import Fastify, { FastifyInstance, RouteShorthandOptions } from "fastify";
-import { Server, IncomingMessage, ServerResponse } from "http";
+import Fastify, { FastifyInstance, FastifyRequest } from "fastify";
+import ws, { SocketStream } from "@fastify/websocket";
 
-const server: FastifyInstance = Fastify({});
+const fastify: FastifyInstance = Fastify({});
 
-const opts: RouteShorthandOptions = {
-  schema: {
-    response: {
-      200: {
-        type: "object",
-        properties: {
-          pong: {
-            type: "string",
-          },
-        },
-      },
+function handle(conn: SocketStream, req: FastifyRequest) {
+  conn.pipe(conn); // creates an echo server
+}
+
+fastify.register(require("@fastify/websocket"), {
+  handle,
+  options: { maxPayload: 1048576 },
+});
+
+fastify.register(async function () {
+  fastify.route({
+    method: "GET",
+    url: "/hello",
+    handler: (req, reply) => {
+      // this will handle http requests
+      reply.send({ hello: "world" });
     },
-  },
-};
+    wsHandler: (conn, req) => {
+      // this will handle websockets connections
+      conn.setEncoding("utf8");
+      conn.write("hello client");
 
-server.get("/ping", opts, async (request, reply) => {
-  return { pong: "it worked!" };
+      conn.on("foo", () => console.log("received foo!"));
+
+      conn.on("data", (message) => {
+        console.log("received: " + message.toString());
+        conn.socket.send(
+          "hi from server, this was your message: " + message.toString()
+        );
+      });
+    },
+  });
 });
 
 const start = async () => {
   try {
-    await server.listen({ port: 3000 });
+    await fastify.listen({ port: 3000 });
 
-    const address = server.server.address();
+    const address = fastify.server.address();
     const port = typeof address === "string" ? address : address?.port;
   } catch (err) {
-    server.log.error(err);
+    fastify.log.error(err);
     process.exit(1);
   }
 };
+
 start();
